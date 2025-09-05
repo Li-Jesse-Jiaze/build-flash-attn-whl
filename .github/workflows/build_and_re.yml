@@ -12,6 +12,11 @@ jobs:
       image: nvidia/cuda:12.6.0-devel-ubuntu22.04
 
     steps:
+    - name: Install curl and dependencies
+      run: |
+        apt-get update
+        apt-get install -y curl  # 安装curl工具:cite[1]:cite[4]
+
     - name: Checkout repository
       uses: actions/checkout@v4
 
@@ -20,9 +25,25 @@ jobs:
       with:
         python-version: '3.12'
 
-    - name: Install uv
+    - name: Install uv with retry mechanism
       run: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
+        # 使用循环实现重试机制，应对网络问题
+        max_attempts=5
+        attempt=1
+        while [ $attempt -le $max_attempts ]; do
+          echo "Attempt $attempt to install uv..."
+          if curl -LsSf https://astral.sh/uv/install.sh | sh; then
+            echo "uv installed successfully!"
+            break
+          fi
+          echo "Attempt $attempt failed."
+          if [ $attempt -eq $max_attempts ]; then
+            echo "All attempts failed. Exiting."
+            exit 1
+          fi
+          sleep 5
+          attempt=$((attempt + 1))
+        done
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
     - name: Create virtual environment
