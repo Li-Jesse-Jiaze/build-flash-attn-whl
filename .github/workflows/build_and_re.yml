@@ -1,84 +1,108 @@
-name: Daily Flash-Attention Build
+name: Build flash-attn wheel daily
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # 每天UTC时间午夜运行
-  workflow_dispatch:  # 允许手动触发
+    - cron: "0 2 * * *"   # 每天 02:00 UTC 运行（欧洲/柏林为每日清晨）
+  workflow_dispatch:
+
+permissions:
+  contents: write   # 创建/上传 Release 需要
 
 jobs:
-  build-and-release:
+  build:
     runs-on: ubuntu-latest
-    container:
-      image: nvidia/cuda:12.6.0-devel-ubuntu22.04
 
     steps:
-    - name: Install curl and dependencies
-      run: |
-        apt-get update
-        apt-get install -y curl  # 安装curl工具:cite[1]:cite[4]
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
+      - name: Install uv
+        shell: bash
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "${HOME}/.local/bin" >> $GITHUB_PATH
+          uv --version
 
-    - name: Install uv with retry mechanism
-      run: |
-        # 使用循环实现重试机制，应对网络问题
-        max_attempts=5
-        attempt=1
-        while [ $attempt -le $max_attempts ]; do
-          echo "Attempt $attempt to install uv..."
-          if curl -LsSf https://astral.sh/uv/install.sh | sh; then
-            echo "uv installed successfully!"
-            break
-          fi
-          echo "Attempt $attempt failed."
-          if [ $attempt -eq $max_attempts ]; then
-            echo "All attempts failed. Exiting."
-            exit 1
-          fi
-          sleep 5
-          attempt=$((attempt + 1))
-        done
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - name: Create venv & install nightly torch (cu126)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          uv venv -p 3.12 --seed
+          source .venv/bin/activate
+          python -V
+          # 安装指定源的 nightly torch（cu126）
+          pip install --upgrade pip
+          pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu126
 
-    - name: Create virtual environment
-      run: uv venv -p 3.12 --seed
+      - name: Build flash-attn wheel
+        shell: bash
+        env:
+          MAX_JOBS: "4"
+          FLASH_ATTENTION_FORCE_BUILD: "TRUE"
+        run: |
+          set -euxo pipefail
+          source .venv/bin/activate
+          mkdir -p wheelhouse
+          # 可选：一些常见构建依赖
+          pip install --upgrade build wheel setuptools packaging ninja cmake
+          # 构建 wheel（无隔离，使用已装的 torch/cuda 环境）
+          python -m pip wheel --no-build-isolation --no-deps flash-attn -w ./wheelhouse
+          ls -lh wheelhouse
 
-    - name: Install PyTorch nightly
-      run: |
-        source .venv/bin/activate
-        pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu126
+      - name: Compute versions for tag
+        id: vers
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          # 读取 torch 版本与 cuda 标记
+          T_VERSION=$(python - <<'PY'
+import torch, sys
+print(torch.__version__)
+PY
+)
+          CUDA_TAG=$(python - <<'PY'
+import torch, sys
+v = getattr(torch.version, "cuda", None)
+print(("cu"+v.replace(".","")) if v else "cpu")
+PY
+)
+          # 解析 wheelhouse 中的 flash-attn 版本（从文件名提取）
+          FA_WHL=$(ls wheelhouse/flash_attn-*.whl | head -n1)
+          FA_VERSION=$(python - <<'PY'
+import os, re, sys
+p = os.environ["FA_WHL"]
+m = re.search(r"flash[_-]attn-([0-9][^ -]*)-", os.path.basename(p))
+print(m.group(1) if m else "unknown")
+PY
+)
+          TAG="torch-${T_VERSION}_flashattn-${FA_VERSION}_${CUDA_TAG}"
+          echo "torch_version=${T_VERSION}" >> $GITHUB_OUTPUT
+          echo "flashattn_version=${FA_VERSION}" >> $GITHUB_OUTPUT
+          echo "cuda_tag=${CUDA_TAG}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "Release tag will be: ${TAG}"
 
-    - name: Build flash-attention wheel
-      run: |
-        source .venv/bin/activate
-        mkdir -p wheelhouse
-        MAX_JOBS=4 FLASH_ATTENTION_FORCE_BUILD=TRUE \
-        python -m pip wheel --no-build-isolation --no-deps flash-attn -w ./wheelhouse
+      - name: Create GitHub Release & upload wheels
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vers.outputs.tag }}
+          name: ${{ steps.vers.outputs.tag }}
+          body: |
+            - torch: ${{ steps.vers.outputs.torch_version }}
+            - flash-attn: ${{ steps.vers.outputs.flashattn_version }}
+            - cuda: ${{ steps.vers.outputs.cuda_tag }}
+          files: wheelhouse/*.whl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Get package versions
-      id: versions
-      run: |
-        source .venv/bin/activate
-        echo "TORCH_VERSION=$(python -c "import torch; print(torch.__version__)")" >> $GITHUB_OUTPUT
-        echo "FLASH_ATTENTION_VERSION=$(python -c "import importlib.metadata; print(importlib.metadata.version('flash-attn'))")" >> $GITHUB_OUTPUT
-        echo "CUDA_VERSION=cu126" >> $GITHUB_OUTPUT
-
-    - name: Create tag name
-      id: tag
-      run: |
-        TAG_NAME="${{ steps.versions.outputs.TORCH_VERSION }}+${{ steps.versions.outputs.FLASH_ATTENTION_VERSION }}+${{ steps.versions.outputs.CUDA_VERSION }}"
-        echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_OUTPUT
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: ${{ steps.tag.outputs.TAG_NAME }}
-        files: wheelhouse/*.whl
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Also upload as workflow artifact (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ steps.vers.outputs.tag }}
+          path: wheelhouse/*.whl
