@@ -51,12 +51,12 @@ jobs:
 
     - name: Install PyTorch nightly
       run: |
-        source .venv/bin/activate
+        . .venv/bin/activate
         pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu126
 
     - name: Build flash-attention wheel
       run: |
-        source .venv/bin/activate
+        . .venv/bin/activate
         mkdir -p wheelhouse
         MAX_JOBS=4 FLASH_ATTENTION_FORCE_BUILD=TRUE \
         python -m pip wheel --no-build-isolation --no-deps flash-attn -w ./wheelhouse
@@ -64,7 +64,7 @@ jobs:
     - name: Get package versions
       id: versions
       run: |
-        source .venv/bin/activate
+        . .venv/bin/activate
         echo "TORCH_VERSION=$(python -c "import torch; print(torch.__version__)")" >> $GITHUB_OUTPUT
         echo "FLASH_ATTENTION_VERSION=$(python -c "import importlib.metadata; print(importlib.metadata.version('flash-attn'))")" >> $GITHUB_OUTPUT
         echo "CUDA_VERSION=cu126" >> $GITHUB_OUTPUT
