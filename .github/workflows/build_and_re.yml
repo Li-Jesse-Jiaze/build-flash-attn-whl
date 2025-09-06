@@ -2,7 +2,7 @@ name: Daily Flash-Attention Build
 
 on:
   schedule:
-    - cron: '0 * * * *'   # 每小时整点（UTC）监控一次
+    - cron: '0 */3 * * *'
   workflow_dispatch:
 
 jobs:
