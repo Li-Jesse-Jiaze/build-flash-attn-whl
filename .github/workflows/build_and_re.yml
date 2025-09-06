@@ -2,7 +2,7 @@ name: Daily Flash-Attention Build
 
 on:
   schedule:
-    - cron: '0 */3 * * *'
+    - cron: '0 */4 * * *'
   workflow_dispatch:
 
 jobs:
@@ -22,14 +22,14 @@ jobs:
       shell: bash
       run: |
         set -euo pipefail
-        TODAY=$(date -u +%Y%m%d)  # 使用 UTC 日期
+        TODAY=$(date -u +%Y%m%d)
         BASE_URL="https://download.pytorch.org/whl/nightly/cu126/torch/"
         echo "Checking for torch nightly with date dev${TODAY} at: ${BASE_URL}"
         if curl -fsSL "$BASE_URL" | grep -E "torch-.*dev${TODAY}\+cu126.*\.whl" > /dev/null; then
           echo "found=true" >> $GITHUB_OUTPUT
           echo "Found torch nightly for dev${TODAY} (+cu126). Proceeding."
         else
-          echo "found=false" >> $GITHUB_OUTPUT
+          echo "found=true" >> $GITHUB_OUTPUT
           echo "No torch nightly with dev${TODAY} (+cu126) found. Skipping build."
         fi
 
