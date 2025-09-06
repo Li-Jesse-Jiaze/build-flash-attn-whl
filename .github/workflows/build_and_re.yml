@@ -2,7 +2,7 @@ name: Daily Flash-Attention Build
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 * * * *'   # 每小时整点（UTC）监控一次
   workflow_dispatch:
 
 jobs:
@@ -12,13 +12,14 @@ jobs:
       image: nvidia/cuda:12.6.0-devel-ubuntu22.04
 
     steps:
-    - name: Install curl and dependencies
+    - name: Install curl
       run: |
         apt-get update
         apt-get install -y curl
 
     - name: Check today's PyTorch nightly (cu126)
       id: check
+      shell: bash
       run: |
         set -euo pipefail
         TODAY=$(date -u +%Y%m%d)  # 使用 UTC 日期
@@ -33,16 +34,18 @@ jobs:
         fi
 
     - name: Checkout repository
+      if: steps.check.outputs.found == 'true'
       uses: actions/checkout@v4
 
     - name: Set up Python 3.12
+      if: steps.check.outputs.found == 'true'
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
 
     - name: Install uv with retry mechanism
+      if: steps.check.outputs.found == 'true'
       run: |
-        # 使用循环实现重试机制，应对网络问题
         max_attempts=5
         attempt=1
         while [ $attempt -le $max_attempts ]; do
@@ -62,14 +65,17 @@ jobs:
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
     - name: Create virtual environment
+      if: steps.check.outputs.found == 'true'
       run: uv venv -p 3.12 --seed
 
     - name: Install PyTorch nightly
+      if: steps.check.outputs.found == 'true'
       run: |
         . .venv/bin/activate
         pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu126
 
     - name: Build flash-attention wheel
+      if: steps.check.outputs.found == 'true'
       run: |
         . .venv/bin/activate
         mkdir -p wheelhouse
@@ -77,6 +83,7 @@ jobs:
         python -m pip wheel --no-build-isolation --no-deps flash-attn -w ./wheelhouse
 
     - name: Get package versions
+      if: steps.check.outputs.found == 'true'
       id: versions
       run: |
         . .venv/bin/activate
@@ -85,12 +92,14 @@ jobs:
         echo "CUDA_VERSION=cu126" >> $GITHUB_OUTPUT
 
     - name: Create tag name
+      if: steps.check.outputs.found == 'true'
       id: tag
       run: |
         TAG_NAME="${{ steps.versions.outputs.TORCH_VERSION }}+${{ steps.versions.outputs.FLASH_ATTENTION_VERSION }}+${{ steps.versions.outputs.CUDA_VERSION }}"
         echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_OUTPUT
 
     - name: Create Release
+      if: steps.check.outputs.found == 'true'
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.tag.outputs.TAG_NAME }}
