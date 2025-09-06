@@ -29,7 +29,7 @@ jobs:
           echo "found=true" >> $GITHUB_OUTPUT
           echo "Found torch nightly for dev${TODAY} (+cu126). Proceeding."
         else
-          echo "found=true" >> $GITHUB_OUTPUT
+          echo "found=false" >> $GITHUB_OUTPUT
           echo "No torch nightly with dev${TODAY} (+cu126) found. Skipping build."
         fi
 
