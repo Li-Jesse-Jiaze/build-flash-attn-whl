@@ -76,14 +76,13 @@ jobs:
       run: |
         . .venv/bin/activate
         echo "TORCH_VERSION=$(python -c "import torch; print(torch.__version__)")" >> $GITHUB_OUTPUT
-        echo "FLASH_ATTENTION_VERSION=$(python -c "import importlib.metadata; print(importlib.metadata.version('flash-attn'))")" >> $GITHUB_OUTPUT
         echo "CUDA_VERSION=cu126" >> $GITHUB_OUTPUT
 
     - name: Create tag name
       if: steps.check.outputs.found == 'true'
       id: tag
       run: |
-        TAG_NAME="${{ steps.versions.outputs.TORCH_VERSION }}+${{ steps.versions.outputs.FLASH_ATTENTION_VERSION }}+${{ steps.versions.outputs.CUDA_VERSION }}"
+        TAG_NAME="${{ steps.versions.outputs.TORCH_VERSION }}}"
         echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_OUTPUT
 
     - name: Create Release
