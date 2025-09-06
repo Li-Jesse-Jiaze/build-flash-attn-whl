@@ -1,4 +1,4 @@
-name: Daily Flash-Attention Build
+name: Daily Flash-Attention Build test publish
 
 on:
   schedule:
