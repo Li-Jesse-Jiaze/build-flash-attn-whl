@@ -2,8 +2,8 @@ name: Daily Flash-Attention Build
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # 每天UTC时间午夜运行
-  workflow_dispatch:  # 允许手动触发
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   build-and-release:
@@ -15,7 +15,22 @@ jobs:
     - name: Install curl and dependencies
       run: |
         apt-get update
-        apt-get install -y curl  # 安装curl工具:cite[1]:cite[4]
+        apt-get install -y curl
+
+    - name: Check today's PyTorch nightly (cu126)
+      id: check
+      run: |
+        set -euo pipefail
+        TODAY=$(date -u +%Y%m%d)  # 使用 UTC 日期
+        BASE_URL="https://download.pytorch.org/whl/nightly/cu126/torch/"
+        echo "Checking for torch nightly with date dev${TODAY} at: ${BASE_URL}"
+        if curl -fsSL "$BASE_URL" | grep -E "torch-.*dev${TODAY}\+cu126.*\.whl" > /dev/null; then
+          echo "found=true" >> $GITHUB_OUTPUT
+          echo "Found torch nightly for dev${TODAY} (+cu126). Proceeding."
+        else
+          echo "found=false" >> $GITHUB_OUTPUT
+          echo "No torch nightly with dev${TODAY} (+cu126) found. Skipping build."
+        fi
 
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -76,7 +91,7 @@ jobs:
         echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_OUTPUT
 
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.tag.outputs.TAG_NAME }}
         files: wheelhouse/*.whl
